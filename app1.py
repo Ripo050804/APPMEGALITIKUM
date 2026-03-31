@@ -1,579 +1,653 @@
 """
 APLIKASI KLASIFIKASI BATU MEGALITIKUM
-Fitur: Kamera, Upload, Info Kelas, Download PDF, Mobile-friendly
-Dilengkapi deteksi kualitas gambar, image enhancement, dan filter konten
+Sistem Klasifikasi Citra Batu Megalitikum Berbasis Deep Learning
+Versi Production - Siap Deployment di Streamlit Cloud
 """
 
 import streamlit as st
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance
 import json
 import os
 import time
-from fpdf import FPDF
 import tempfile
-import cv2
-from io import BytesIO
+from datetime import datetime
+import gdown
+import requests
 
 # ==============================================
-# KONFIGURASI HALAMAN
+# KONFIGURASI HALAMAN (HARUS PERTAMA)
 # ==============================================
 st.set_page_config(
     page_title="Klasifikasi Batu Megalitikum",
-    page_icon="🗿",
+    page_icon="🪨",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ==============================================
-# DESKRIPSI KELAS
+# INISIALISASI SESSION STATE
 # ==============================================
-DESKRIPSI_KELAS = {
-    "Arca": "Arca adalah patung yang melambangkan nenek moyang atau dewa. Biasanya berbentuk manusia atau hewan, dan ditemukan di situs megalitik sebagai objek pemujaan.",
-    "dolmen": "Dolmen adalah meja batu yang terdiri dari beberapa batu tegak yang menopang batu datar di atasnya. Digunakan sebagai tempat meletakkan sesaji atau untuk upacara.",
-    "menhir": "Menhir adalah tugu batu tegak yang didirikan sebagai tanda peringatan atau simbol kekuatan. Biasanya ditemukan berdiri sendiri atau berkelompok.",
-    "dakon": "Dakon adalah batu berlubang-lubang yang menyerupai papan permainan congkak. Diduga digunakan untuk ritual atau permainan tradisional.",
-    "batu_datar": "Batu datar adalah batu besar berbentuk lempengan yang mungkin digunakan sebagai alas atau tempat duduk dalam upacara adat.",
-    "Kubur_batu": "Kubur batu adalah peti mati yang terbuat dari batu, digunakan untuk mengubur mayat pada masa megalitik. Biasanya ditemukan di dalam tanah.",
-     "Lesung_batu": "Lesung batu adalah batu berlubang yang digunakan sebagai wadah untuk menumbuk atau menghaluskan bahan makanan pada masa megalitikum."
+if 'model_loaded' not in st.session_state:
+    st.session_state.model_loaded = False
+if 'class_names' not in st.session_state:
+    st.session_state.class_names = []
+if 'interpreter' not in st.session_state:
+    st.session_state.interpreter = None
+
+# ==============================================
+# CUSTOM CSS
+# ==============================================
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .main-header {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 20px;
+        margin-bottom: 2rem;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    
+    .main-header h1 {
+        margin: 0;
+        font-size: 2.5rem;
+        font-weight: 800;
+    }
+    
+    .main-header p {
+        margin-top: 0.5rem;
+        font-size: 1.1rem;
+        opacity: 0.9;
+    }
+    
+    .result-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 20px;
+        margin: 1rem 0;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    .confidence-high {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        display: inline-block;
+        font-weight: bold;
+    }
+    
+    .confidence-medium {
+        background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        display: inline-block;
+        font-weight: bold;
+    }
+    
+    .confidence-low {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        display: inline-block;
+        font-weight: bold;
+    }
+    
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: bold;
+        padding: 0.75rem;
+        border-radius: 50px;
+        border: none;
+        transition: all 0.3s;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    
+    .metric-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 15px;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+    
+    .metric-value {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: #667eea;
+    }
+    
+    .footer {
+        text-align: center;
+        padding: 2rem;
+        color: white;
+        margin-top: 2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ==============================================
+# KONSTANTA GLOBAL
+# ==============================================
+
+# Google Drive File IDs (ganti dengan ID file Anda)
+MODEL_FILE_ID = "1hRmWsJ8EmqINdMG1GCTuTjLdOfWr3JOx"
+CLASS_NAMES_FILE_ID = "1xHJ7tIuuUt-FEcGGTdxS2N5NvH03h6AK"
+
+# Gunakan temporary directory untuk cache (kompatibel dengan semua OS)
+CACHE_DIR = tempfile.gettempdir()
+MODEL_PATH = os.path.join(CACHE_DIR, "megalitikum_model.tflite")
+CLASS_NAMES_PATH = os.path.join(CACHE_DIR, "class_names.json")
+
+# Threshold konfidensi
+CONFIDENCE_THRESHOLD = 0.65
+
+# Target size untuk model
+TARGET_SIZE = (224, 224)
+
+# Deskripsi kelas (fallback jika file class_names.json tidak tersedia)
+DESKRIPSI_KELAS_FALLBACK = {
+    "Arca": {
+        "deskripsi": "Arca adalah patung yang melambangkan nenek moyang atau dewa. Biasanya berbentuk manusia atau hewan.",
+        "ciri": ["Berbentuk manusia/hewan", "Detail ukiran", "Posisi berdiri/duduk"],
+        "lokasi": "Sumatera, Jawa, Sulawesi"
+    },
+    "dolmen": {
+        "deskripsi": "Dolmen adalah meja batu yang terdiri dari beberapa batu tegak yang menopang batu datar.",
+        "ciri": ["Meja batu", "Tiga atau empat kaki", "Permukaan datar"],
+        "lokasi": "Jawa Timur, Sumatera Selatan"
+    },
+    "menhir": {
+        "deskripsi": "Menhir adalah tugu batu tegak sebagai tanda peringatan atau simbol kekuatan.",
+        "ciri": ["Bentuk memanjang", "Tegak lurus", "Permukaan kasar"],
+        "lokasi": "Nias, Pasemah, Kalimantan"
+    },
+    "dakon": {
+        "deskripsi": "Dakon adalah batu berlubang-lubang seperti papan permainan congkak.",
+        "ciri": ["Lubang-lubang teratur", "Bentuk persegi/oval", "Ukiran sederhana"],
+        "lokasi": "Jawa Barat, Jawa Tengah"
+    },
+    "batu_datar": {
+        "deskripsi": "Batu datar adalah batu besar berbentuk lempengan untuk alas atau tempat duduk.",
+        "ciri": ["Permukaan rata", "Bentuk lempeng", "Ukuran besar"],
+        "lokasi": "Sumatra, Jawa, Bali"
+    },
+    "Kubur_batu": {
+        "deskripsi": "Kubur batu adalah peti mati dari batu untuk mengubur mayat.",
+        "ciri": ["Bentuk peti", "Tutup batu", "Ukiran sederhana"],
+        "lokasi": "Jawa Timur, Nusa Tenggara"
+    },
+    "Lesung_batu": {
+        "deskripsi": "Lesung batu adalah batu berlubang untuk menumbuk bahan makanan.",
+        "ciri": ["Lubang cekung", "Dinding tebal", "Permukaan kasar"],
+        "lokasi": "Seluruh Indonesia"
+    }
 }
 
-# Kata kunci untuk deteksi objek non-batu (sederhana)
-NON_MEGALITH_KEYWORDS = ['kucing', 'anjing', 'mobil', 'pohon', 'rumah', 'orang', 'manusia', 
-                         'hewan', 'animal', 'cat', 'dog', 'car', 'tree', 'house', 'person']
-
 # ==============================================
-# FUNGSI ENHANCEMENT GAMBAR
+# FUNGSI DOWNLOAD MODEL
 # ==============================================
-def enhance_image(image):
-    """Tingkatkan kualitas gambar untuk prediksi lebih akurat"""
-    
-    # Konversi ke RGB jika perlu
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # 1. Sharpening untuk mengurangi blur
-    image = image.filter(ImageFilter.SHARPEN)
-    image = image.filter(ImageFilter.SHARPEN)  # Double sharpen untuk blur parah
-    
-    # 2. Tingkatkan kontras
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(1.3)
-    
-    # 3. Tingkatkan ketajaman
-    enhancer = ImageEnhance.Sharpness(image)
-    image = enhancer.enhance(1.5)
-    
-    # 4. Normalisasi brightness
-    enhancer = ImageEnhance.Brightness(image)
-    image = enhancer.enhance(1.1)
-    
-    return image
-
-def adaptive_enhancement(image, blur_score, brightness, contrast):
-    """Enhancement adaptif berdasarkan skor kualitas"""
-    
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # Jika blur, tambah sharpening lebih kuat
-    if blur_score < 200:
-        for _ in range(3):
-            image = image.filter(ImageFilter.SHARPEN)
-    
-    # Jika kontras rendah, tingkatkan kontras
-    if contrast < 40:
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(1.5)
-    
-    # Jika terlalu gelap, tingkatkan brightness
-    if brightness < 80:
-        enhancer = ImageEnhance.Brightness(image)
-        image = enhancer.enhance(1.3)
-    
-    # Jika terlalu terang, kurangi brightness
-    elif brightness > 180:
-        enhancer = ImageEnhance.Brightness(image)
-        image = enhancer.enhance(0.8)
-    
-    return image
-
-# ==============================================
-# FUNGSI DETEKSI OBJEK NON-BATU (SEDERHANA)
-# ==============================================
-def detect_non_megalith(image):
-    """
-    Deteksi sederhana apakah gambar mengandung objek non-batu
-    Menggunakan analisis warna dan tekstur
-    """
+@st.cache_resource
+def download_model():
+    """Download model dan class names dari Google Drive menggunakan gdown"""
     try:
-        # Konversi ke array numpy
-        img_array = np.array(image.convert('RGB'))
+        # Download model
+        if not os.path.exists(MODEL_PATH):
+            with st.spinner("📥 Mengunduh model AI (ukuran besar, harap tunggu)..."):
+                url = f"https://drive.google.com/uc?id={MODEL_FILE_ID}"
+                gdown.download(url, MODEL_PATH, quiet=False)
+                st.success("✅ Model berhasil diunduh!")
         
-        # 1. Analisis dominasi warna batu (abu-abu, coklat)
-        # Hitung rata-rata per channel
-        r_mean = np.mean(img_array[:,:,0])
-        g_mean = np.mean(img_array[:,:,1])
-        b_mean = np.mean(img_array[:,:,2])
+        # Download class names
+        if not os.path.exists(CLASS_NAMES_PATH):
+            with st.spinner("📋 Mengunduh data klasifikasi..."):
+                url = f"https://drive.google.com/uc?id={CLASS_NAMES_FILE_ID}"
+                gdown.download(url, CLASS_NAMES_PATH, quiet=False)
+                st.success("✅ Data kelas berhasil diunduh!")
         
-        # Batu cenderung memiliki nilai RGB yang mirip (grayscale)
-        rgb_variance = np.var([r_mean, g_mean, b_mean])
-        
-        # 2. Deteksi warna hijau (daun, rumput) - indikator non-batu
-        green_dominance = (g_mean > r_mean * 1.2) and (g_mean > b_mean * 1.2)
-        
-        # 3. Deteksi warna biru (langit, air)
-        blue_dominance = (b_mean > r_mean * 1.3) and (b_mean > g_mean * 1.3)
-        
-        # 4. Deteksi warna cerah (bunga, benda warna-warni)
-        color_variance = np.var([r_mean, g_mean, b_mean])
-        high_color_variance = color_variance > 500
-        
-        # Logika deteksi
-        if green_dominance:
-            return True, "Gambar didominasi warna hijau (mungkin tumbuhan/pohon)"
-        elif blue_dominance:
-            return True, "Gambar didominasi warna biru (mungkin langit/air)"
-        elif high_color_variance and rgb_variance > 200:
-            return True, "Gambar memiliki variasi warna tinggi (mungkin bukan batu)"
-        elif rgb_variance > 300:
-            return True, "Warna tidak seragam (mungkin objek non-batu)"
-        else:
-            return False, "Objek terdeteksi sebagai potensi batu"
-            
+        return True
     except Exception as e:
-        return False, f"Error deteksi: {str(e)}"
+        st.error(f"❌ Gagal mengunduh file: {str(e)}")
+        return False
 
 # ==============================================
-# FUNGSI DETEKSI KUALITAS GAMBAR
-# ==============================================
-def cek_kualitas_gambar(image):
-    """Deteksi kualitas gambar (buruk/sedang/baik)"""
-    try:
-        # Convert PIL Image ke array numpy
-        img_array = np.array(image)
-        
-        # Convert ke grayscale untuk analisis
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        
-        # Hitung variance of Laplacian (untuk blur detection)
-        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        
-        # Hitung brightness rata-rata
-        brightness = np.mean(gray)
-        
-        # Hitung kontras (standar deviasi)
-        contrast = np.std(gray)
-        
-        # Klasifikasi kualitas
-        kualitas = "Baik"
-        pesan = []
-        rekomendasi = []
-        
-        # Deteksi blur
-        if laplacian_var < 100:
-            kualitas = "Buruk"
-            pesan.append("• Gambar terlalu blur/kabur")
-            rekomendasi.append("Gambar akan di-sharpen otomatis")
-        elif laplacian_var < 200:
-            if kualitas == "Baik":
-                kualitas = "Sedang"
-            pesan.append("• Gambar sedikit blur")
-            rekomendasi.append("Aplikasi akan meningkatkan ketajaman")
-        
-        # Deteksi brightness
-        if brightness < 50:
-            if kualitas == "Baik":
-                kualitas = "Sedang"
-            pesan.append("• Gambar terlalu gelap")
-            rekomendasi.append("Kecerahan akan ditingkatkan")
-        elif brightness > 200:
-            if kualitas == "Baik":
-                kualitas = "Sedang"
-            pesan.append("• Gambar terlalu terang")
-            rekomendasi.append("Kecerahan akan dikurangi")
-        
-        # Deteksi kontras rendah
-        if contrast < 40:
-            if kualitas == "Baik":
-                kualitas = "Sedang"
-            pesan.append("• Kontras gambar rendah")
-            rekomendasi.append("Kontras akan ditingkatkan")
-        
-        # Gabungkan pesan
-        pesan_text = "\n".join(pesan) if pesan else "Kualitas gambar baik"
-        rekomendasi_text = "\n".join(rekomendasi) if rekomendasi else "Tidak perlu enhancement"
-        
-        return kualitas, pesan_text, rekomendasi_text, laplacian_var, brightness, contrast
-        
-    except Exception as e:
-        return "Tidak diketahui", f"Error analisis: {str(e)}", "", 0, 0, 0
-
-# ==============================================
-# LOAD TFLITE MODEL
+# LOAD MODEL TENSORFLOW LITE
 # ==============================================
 @st.cache_resource
 def load_tflite_model():
+    """Load TensorFlow Lite model"""
     try:
         import tensorflow as tf
-        interpreter = tf.lite.Interpreter(model_path="megalitikum_model.tflite")
+        
+        # Download model terlebih dahulu
+        if not download_model():
+            return None, None, None
+        
+        # Load model
+        interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
         interpreter.allocate_tensors()
+        
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
+        
         return interpreter, input_details, output_details
+        
+    except ImportError:
+        st.warning("⚠️ TensorFlow tidak terinstal. Aplikasi berjalan dalam mode demo.")
+        return None, None, None
     except Exception as e:
-        st.error(f"❌ Gagal memuat model: {str(e)}")
+        st.error(f"❌ Error loading model: {str(e)}")
         return None, None, None
 
+# ==============================================
+# LOAD CLASS NAMES
+# ==============================================
 @st.cache_data
 def load_class_names():
+    """Load class names dari file JSON"""
     try:
-        with open('class_names.json', 'r') as f:
-            return json.load(f)
-    except:
-        return list(DESKRIPSI_KELAS.keys())
+        if os.path.exists(CLASS_NAMES_PATH):
+            with open(CLASS_NAMES_PATH, 'r', encoding='utf-8') as f:
+                class_names = json.load(f)
+                return class_names
+        else:
+            return list(DESKRIPSI_KELAS_FALLBACK.keys())
+    except Exception as e:
+        st.warning(f"Gagal load class names: {str(e)}")
+        return list(DESKRIPSI_KELAS_FALLBACK.keys())
 
-@st.cache_data
-def load_model_info():
+# ==============================================
+# FUNGSI PREPROCESSING GAMBAR (Tanpa OpenCV)
+# ==============================================
+def preprocess_image(image):
+    """
+    Preprocessing gambar untuk model
+    Menggunakan PIL saja untuk menghindari dependensi OpenCV yang berat
+    """
     try:
-        with open('model_info.json', 'r') as f:
-            return json.load(f)
-    except:
-        return {'test_accuracy': 0.9782, 'best_val_accuracy_phase2': 0.9880}
+        # Convert to RGB
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Resize dengan kualitas tinggi
+        image = image.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
+        
+        # Konversi ke numpy array dan normalisasi
+        img_array = np.array(image, dtype=np.float32) / 255.0
+        
+        # Enhance contrast sederhana
+        img_array = np.power(img_array, 0.8)  # Gamma correction sederhana
+        
+        return img_array
+    except Exception as e:
+        st.error(f"Error preprocessing: {str(e)}")
+        return None
 
 # ==============================================
-# FUNGSI PREDIKSI TFLITE
+# FUNGSI ANALISIS KUALITAS GAMBAR (Tanpa OpenCV)
 # ==============================================
-def predict_tflite(interpreter, input_details, output_details, image):
-    img = image.convert('RGB').resize((224, 224))
-    img_array = np.array(img, dtype=np.float32) / 255.0
-    input_data = np.expand_dims(img_array, axis=0)
-    interpreter.set_tensor(input_details[0]['index'], input_data)
-    interpreter.invoke()
-    output_data = interpreter.get_tensor(output_details[0]['index'])
-    return output_data[0]
+def analyze_image_quality(image):
+    """Analisis kualitas gambar menggunakan PIL dan NumPy"""
+    try:
+        # Convert to grayscale
+        gray = image.convert('L')
+        gray_array = np.array(gray, dtype=np.float32)
+        
+        # Hitung metrik
+        brightness = np.mean(gray_array)
+        contrast = np.std(gray_array)
+        texture = np.var(gray_array)
+        
+        # Estimasi ketajaman (gradient sederhana)
+        if gray_array.shape[0] > 2 and gray_array.shape[1] > 2:
+            grad_x = np.abs(np.diff(gray_array, axis=1))
+            grad_y = np.abs(np.diff(gray_array, axis=0))
+            sharpness = np.mean(grad_x) + np.mean(grad_y)
+        else:
+            sharpness = 100
+        
+        return {
+            'brightness': brightness,
+            'contrast': contrast,
+            'texture': texture,
+            'sharpness': sharpness
+        }
+    except Exception as e:
+        return {
+            'brightness': 128,
+            'contrast': 64,
+            'texture': 500,
+            'sharpness': 200
+        }
 
 # ==============================================
-# FUNGSI BUAT PDF HASIL
+# FUNGSI PREDIKSI
 # ==============================================
-def buat_pdf_hasil(nama_file, kelas, confidence, top3, deskripsi, kualitas="", warning=""):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=16, style='B')
-    pdf.cell(200, 10, txt="LAPORAN KLASIFIKASI BATU MEGALITIKUM", ln=1, align='C')
-    pdf.ln(10)
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt=f"File: {nama_file}", ln=1)
-    pdf.cell(200, 10, txt=f"Hasil Prediksi: {kelas}", ln=1)
-    pdf.cell(200, 10, txt=f"Confidence: {confidence:.2%}", ln=1)
-    if kualitas:
-        pdf.cell(200, 10, txt=f"Kualitas Gambar: {kualitas}", ln=1)
-    if warning:
-        pdf.cell(200, 10, txt=f"Catatan: {warning}", ln=1)
-    pdf.ln(5)
-    pdf.set_font("Arial", style='B', size=12)
-    pdf.cell(200, 10, txt="Top 3 Prediksi:", ln=1)
-    pdf.set_font("Arial", size=12)
-    for i, (k, c) in enumerate(top3, 1):
-        pdf.cell(200, 10, txt=f"  {i}. {k}: {c:.2%}", ln=1)
-    pdf.ln(5)
-    pdf.set_font("Arial", style='B', size=12)
-    pdf.cell(200, 10, txt="Deskripsi:", ln=1)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, txt=deskripsi)
-    return pdf.output(dest='S').encode('latin1')
+def predict_image(interpreter, input_details, output_details, image):
+    """Prediksi gambar menggunakan model TFLite"""
+    try:
+        # Preprocess
+        img_array = preprocess_image(image)
+        if img_array is None:
+            return None
+        
+        # Prepare input
+        input_data = np.expand_dims(img_array, axis=0)
+        
+        # Predict
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
+        predictions = interpreter.get_tensor(output_details[0]['index'])[0]
+        
+        return predictions
+    except Exception as e:
+        st.error(f"Error prediksi: {str(e)}")
+        return None
 
 # ==============================================
-# LOAD SEMUA DATA
+# FUNGSI SIMULASI PREDIKSI (Mode Demo)
 # ==============================================
-interpreter, input_details, output_details = load_tflite_model()
-class_names = load_class_names()
-model_info = load_model_info()
+def simulate_prediction(image, class_names):
+    """Simulasi prediksi untuk mode demo"""
+    try:
+        # Analisis sederhana untuk simulasi
+        quality = analyze_image_quality(image)
+        
+        # Buat prediksi dummy berdasarkan tekstur
+        np.random.seed(int(quality['texture']) % 10000)
+        predictions = np.random.rand(len(class_names))
+        predictions = predictions / np.sum(predictions)
+        
+        return predictions
+    except Exception:
+        # Fallback: distribusi uniform
+        predictions = np.ones(len(class_names)) / len(class_names)
+        return predictions
+
+# ==============================================
+# FUNGSI GET DESKRIPSI
+# ==============================================
+def get_description(class_name):
+    """Mendapatkan deskripsi kelas"""
+    if class_name in DESKRIPSI_KELAS_FALLBACK:
+        return DESKRIPSI_KELAS_FALLBACK[class_name]
+    return {
+        "deskripsi": f"Deskripsi untuk {class_name} tidak tersedia.",
+        "ciri": ["Belum terdefinisi"],
+        "lokasi": "Belum terdefinisi"
+    }
+
+# ==============================================
+# HEADER UTAMA
+# ==============================================
+st.markdown("""
+<div class="main-header">
+    <h1>🪨 KLASIFIKASI BATU MEGALITIKUM</h1>
+    <p>Sistem Identifikasi Cerdas Berbasis Deep Learning</p>
+</div>
+""", unsafe_allow_html=True)
 
 # ==============================================
 # SIDEBAR
 # ==============================================
 with st.sidebar:
-    st.image("https://via.placeholder.com/300x100?text=MEGALITIKUM", use_container_width=True)
-    st.markdown("### 📊 Performa Model")
-    st.metric("Test Accuracy", f"{model_info['test_accuracy']*100:.2f}%")
-    st.metric("Best Validation", f"{model_info['best_val_accuracy_phase2']*100:.2f}%")
-    st.markdown("---")
-    st.markdown("### 🗿 Tentang Kelas")
-    for nama in DESKRIPSI_KELAS.keys():
-        with st.expander(nama):
-            st.write(DESKRIPSI_KELAS[nama])
-
-# ==============================================
-# TAB UTAMA
-# ==============================================
-tab1, tab2, tab3, tab4 = st.tabs(["📸 Prediksi", "ℹ️ Info Model", "📖 Panduan", "🔍 Filter Konten"])
-
-# ==============================================
-# TAB 1: PREDIKSI
-# ==============================================
-with tab1:
-    st.markdown("### 📤 Ambil Gambar")
+    st.markdown("## 🎯 Tentang Aplikasi")
+    st.markdown("""
+    Aplikasi ini menggunakan **Deep Learning** untuk mengidentifikasi 
+    berbagai jenis batu megalitikum dari gambar yang diupload.
+    """)
     
-    # Layout responsif
-    sumber = st.radio(
-        "Pilih sumber gambar:",
-        ["📁 Upload dari File", "📷 Ambil dengan Kamera"],
-        horizontal=True
+    st.markdown("---")
+    st.markdown("## 📊 Informasi")
+    st.markdown("""
+    - **Kelas:** 7 jenis
+    - **Framework:** TensorFlow Lite
+    - **Akurasi:** 90%+
+    """)
+    
+    st.markdown("---")
+    st.markdown("## 💡 Tips Penggunaan")
+    st.markdown("""
+    1. ✅ Pencahayaan cukup
+    2. ✅ Objek batu jelas
+    3. ✅ Background polos
+    4. ✅ Hindari gambar blur
+    """)
+    
+    st.markdown("---")
+    st.markdown("## 📞 Kontak")
+    st.markdown("Untuk keperluan akademik dan penelitian.")
+
+# ==============================================
+# LOAD MODEL
+# ==============================================
+with st.spinner("🔄 Memuat model AI..."):
+    interpreter, input_details, output_details = load_tflite_model()
+    class_names = load_class_names()
+    
+    # Cek apakah model berhasil dimuat
+    use_real_model = interpreter is not None
+    
+    if not use_real_model:
+        st.info("ℹ️ Mode Demo: Aplikasi berjalan dengan simulasi. Install TensorFlow untuk hasil akurat.")
+
+# ==============================================
+# MAIN CONTENT - UPLOAD AREA
+# ==============================================
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown("## 📸 Upload Gambar")
+    
+    # Pilihan upload
+    upload_type = st.radio(
+    "Pilih sumber gambar:",
+    ["📁 Upload File", "📷 Kamera"],
+    horizontal=True
     )
     
-    gambar = None
-    if sumber == "📁 Upload dari File":
-        gambar = st.file_uploader("Pilih file gambar...", type=['jpg', 'jpeg', 'png'])
+    image_file = None
+    if upload_type == "📁 Upload File":
+        image_file = st.file_uploader(
+            "Pilih file gambar (JPG, JPEG, PNG)",
+            type=['jpg', 'jpeg', 'png'],
+            label_visibility="collapsed"
+        )
     else:
-        st.info("⚠️ Browser akan meminta izin akses kamera. Klik 'Allow' untuk melanjutkan.")
-        gambar = st.camera_input("Ambil foto")
+        image_file = st.camera_input("Ambil foto", label_visibility="collapsed")
+    
+    if image_file:
+        try:
+            image = Image.open(image_file)
+            st.image(image, caption="Gambar yang akan dianalisis", use_container_width=True)
+        except Exception as e:
+            st.error(f"Gagal membuka gambar: {str(e)}")
+            image = None
 
-    if gambar:
-        # Tampilkan gambar asli
-        image = Image.open(gambar)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.image(image, caption="Gambar Asli", use_container_width=True)
-        
-        # ==========================================
-        # CEK KUALITAS DAN DETEKSI OBJEK
-        # ==========================================
-        kualitas, pesan_kualitas, rekomendasi, blur_score, brightness, contrast = cek_kualitas_gambar(image)
-        
-        # Deteksi objek non-batu
-        is_non_megalith, deteksi_msg = detect_non_megalith(image)
-        
-        # Tampilkan peringatan kualitas
-        if kualitas != "Baik":
-            with col2:
-                if kualitas == "Buruk":
-                    st.error(f"⚠️ **Kualitas Gambar: {kualitas}**")
-                else:
-                    st.warning(f"⚠️ **Kualitas Gambar: {kualitas}**")
-                
-                if pesan_kualitas:
-                    st.info(f"**Masalah:**\n{pesan_kualitas}")
-                
-                if rekomendasi:
-                    st.caption(f"💡 **Enhancement:** {rekomendasi}")
-        
-        # Tampilkan peringatan objek non-batu
-        if is_non_megalith:
-            st.error(f"❌ **Deteksi Objek:** {deteksi_msg}")
-            st.warning("""
-            ⚠️ **Gambar ini terdeteksi BUKAN batu megalitikum!**
+with col2:
+    st.markdown("## 🎯 Kelas yang Didukung")
+    st.markdown('<div style="background: white; padding: 1rem; border-radius: 15px;">', unsafe_allow_html=True)
+    for kelas in class_names:
+        st.markdown(f"- **{kelas}**")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ==============================================
+= PROSES KLASIFIKASI
+# ==============================================
+if image_file and image is not None:
+    st.markdown("---")
+    st.markdown("## 🔍 Analisis & Klasifikasi")
+    
+    # Analisis kualitas gambar
+    with st.spinner("📊 Menganalisis kualitas gambar..."):
+        quality_metrics = analyze_image_quality(image)
+    
+    # Tampilkan metrik kualitas
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div>🔍 Ketajaman</div>
+            <div class="metric-value">{quality_metrics['sharpness']:.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div>🎨 Kontras</div>
+            <div class="metric-value">{quality_metrics['contrast']:.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div>💡 Kecerahan</div>
+            <div class="metric-value">{quality_metrics['brightness']:.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div>📐 Tekstur</div>
+            <div class="metric-value">{quality_metrics['texture']:.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Peringatan kualitas
+    if quality_metrics['brightness'] < 50:
+        st.warning("⚠️ Gambar terlalu gelap. Hasil klasifikasi mungkin kurang akurat.")
+    elif quality_metrics['brightness'] > 200:
+        st.warning("⚠️ Gambar terlalu terang. Hasil klasifikasi mungkin kurang akurat.")
+    
+    if quality_metrics['sharpness'] < 100:
+        st.warning("⚠️ Gambar kurang tajam. Hasil klasifikasi mungkin kurang akurat.")
+    
+    # Tombol klasifikasi
+    if st.button("🚀 MULAI KLASIFIKASI", type="primary", use_container_width=True):
+        with st.spinner("🧠 Memproses dengan AI..."):
+            progress_bar = st.progress(0)
             
-            Model hanya dilatih untuk mengklasifikasi BATU MEGALITIKUM.
-            Prediksi untuk gambar non-batu akan TIDAK AKURAT.
-            """)
+            progress_bar.progress(30)
             
-            # Tanya apakah tetap lanjut
-            lanjut = st.checkbox("Tetap lanjutkan prediksi? (Tidak disarankan)")
-            if not lanjut:
-                st.stop()
-        
-        # Tombol prediksi
-        if st.button("🚀 Prediksi Sekarang", type="primary", use_container_width=True):
+            # Prediksi
+            if use_real_model:
+                predictions = predict_image(interpreter, input_details, output_details, image)
+            else:
+                predictions = simulate_prediction(image, class_names)
             
-            with st.spinner("Menganalisis..."):
-                if interpreter is None:
-                    st.error("Model tidak tersedia.")
-                    st.stop()
-                
-                # ======================================
-                # ENHANCEMENT GAMBAR
-                # ======================================
-                enhanced_image = adaptive_enhancement(image, blur_score, brightness, contrast)
-                
-                # Tampilkan gambar enhanced
-                with col2:
-                    st.image(enhanced_image, caption="Gambar setelah Enhancement", use_container_width=True)
-                
-                # ======================================
-                # PREDIKSI
-                # ======================================
-                predictions = predict_tflite(interpreter, input_details, output_details, enhanced_image)
+            progress_bar.progress(70)
+            
+            if predictions is not None:
+                # Ambil hasil terbaik
                 pred_idx = int(np.argmax(predictions))
-                pred_class = class_names[pred_idx]
+                pred_class = class_names[pred_idx] if pred_idx < len(class_names) else "Unknown"
                 confidence = float(predictions[pred_idx])
-
+                
+                # Top 3 prediksi
                 top_3_idx = np.argsort(predictions)[-3:][::-1]
-                top_3 = [(class_names[i], float(predictions[i])) for i in top_3_idx]
-
+                top_3 = [(class_names[i], float(predictions[i])) for i in top_3_idx if i < len(class_names)]
+                
+                progress_bar.progress(100)
+                time.sleep(0.3)
+                progress_bar.empty()
+                
                 # Tampilkan hasil
-                st.success("### Hasil Prediksi")
-                conf_color = "green" if confidence > 0.8 else "orange" if confidence > 0.6 else "red"
+                st.markdown("## 📊 Hasil Klasifikasi")
                 
-                # Tambahkan warning khusus
-                warning_msg = ""
-                if is_non_megalith:
-                    warning_msg = "Gambar terdeteksi non-batu, prediksi TIDAK AKURAT!"
-                    st.error(f"⚠️ {warning_msg}")
-                elif confidence < 0.6:
-                    warning_msg = "Confidence rendah, prediksi mungkin kurang akurat"
-                    st.warning(f"⚠️ {warning_msg}")
+                col1, col2 = st.columns([1, 1])
                 
-                st.markdown(f"""
-                <div style="background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 4px solid #667eea;">
-                    <h4>Kelas: <span style="color:#667eea;">{pred_class}</span></h4>
-                    <p>Confidence: <span style="color:{conf_color};">{confidence:.2%}</span></p>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Deskripsi
-                st.info(f"**{pred_class}**: {DESKRIPSI_KELAS.get(pred_class, 'Tidak ada deskripsi.')}")
-
-                # Top 3
-                st.markdown("#### 🏆 Top 3")
-                for i, (cls, conf) in enumerate(top_3, 1):
-                    emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
-                    st.markdown(f"{emoji} **{i}. {cls}**: {conf:.2%}")
-
-                # Grafik
-                st.markdown("#### 📊 Probabilitas")
-                sorted_idx = np.argsort(predictions)[::-1]
-                chart_data = {
-                    "Kelas": [class_names[i] for i in sorted_idx],
-                    "Probabilitas": [float(predictions[i]) for i in sorted_idx]
-                }
-                st.bar_chart(chart_data, x="Kelas", y="Probabilitas", height=300)
-
-                # Tombol download PDF
-                pdf_bytes = buat_pdf_hasil(
-                    gambar.name if hasattr(gambar, 'name') else "foto_kamera.jpg",
-                    pred_class,
-                    confidence,
-                    top_3,
-                    DESKRIPSI_KELAS.get(pred_class, ""),
-                    kualitas,
-                    warning_msg
-                )
-                st.download_button(
-                    label="📥 Download Hasil (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"hasil_{pred_class}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-
-# ==============================================
-# TAB 2: INFO MODEL
-# ==============================================
-with tab2:
-    st.markdown("### ℹ️ Detail Model")
-    st.json({
-        "arsitektur": "ResNet50 + Transfer Learning",
-        "input_size": "224x224",
-        "jumlah_kelas": 7,
-        "test_accuracy": f"{model_info['test_accuracy']:.2%}",
-        "best_validation": f"{model_info['best_val_accuracy_phase2']:.2%}",
-        "format": "TFLite (float32)",
-        "ukuran_file": "96.5 MB"
-    })
-    
-    st.markdown("---")
-    st.markdown("### ⚠️ Keterbatasan Model")
-    st.warning("""
-    **Model ini memiliki keterbatasan pada:**
-    - Gambar dengan kualitas rendah (blur, gelap, terlalu terang)
-    - Gambar dengan resolusi sangat kecil
-    - Objek yang tidak terlihat jelas
-    - Pencahayaan ekstrem
-    - **Gambar NON-BATU** (hewan, tumbuhan, manusia, dll)
-    
-    **Saran penggunaan:**
-    - Gunakan gambar dengan pencahayaan cukup
-    - Pastikan objek terlihat jelas
-    - Hindari gambar buram atau goyang
-    - **HANYA gunakan gambar batu megalitikum**
-    """)
-    
-    st.markdown("---")
-    st.markdown("#### 🗿 Daftar Kelas")
-    for nama, desk in DESKRIPSI_KELAS.items():
-        st.markdown(f"**{nama}** : {desk}")
-
-# ==============================================
-# TAB 3: PANDUAN
-# ==============================================
-with tab3:
-    st.markdown("### 📖 Cara Penggunaan")
-    st.markdown("""
-    1. **Pilih sumber gambar** (Upload file atau Kamera)
-    2. **Ambil/upload gambar** batu megalitikum
-    3. Klik tombol **Prediksi Sekarang**
-    4. Lihat hasil klasifikasi, confidence, dan deskripsi
-    5. **Download laporan PDF** jika diperlukan
-    
-    ### 💡 Tips Mendapatkan Hasil Akurat
-    - Gunakan gambar dengan **pencahayaan cukup**
-    - Pastikan **objek tidak blur**
-    - Objek harus **terlihat jelas** di tengah frame
-    - Hindari **background yang terlalu ramai**
-    - Untuk hasil terbaik, gunakan gambar **resolusi tinggi**
-    - **HANYA gunakan gambar batu megalitikum**
-    
-    ### ⚠️ Jika Hasil Tidak Akurat
-    Aplikasi akan mendeteksi kualitas gambar dan memberi peringatan jika:
-    - Gambar terlalu blur (akan di-sharpen otomatis)
-    - Pencahayaan kurang/lebih (akan dinormalisasi)
-    - Kontras rendah (akan ditingkatkan)
-    - **Gambar terdeteksi sebagai NON-BATU** (akan ditolak)
-    
-    Confidence score di bawah 60% menandakan prediksi kurang yakin.
-    """)
-    
-    st.info("Aplikasi ini dioptimalkan untuk tampilan mobile. Anda dapat mengakses semua fitur dengan mudah di ponsel.")
-
-# ==============================================
-# TAB 4: FILTER KONTEN
-# ==============================================
-with tab4:
-    st.markdown("### 🔍 Filter Konten")
-    st.markdown("""
-    Aplikasi ini dilengkapi dengan **filter konten** untuk mendeteksi gambar NON-batu megalitikum.
-    
-    **Cara kerja filter:**
-    - Analisis dominasi warna (hijau = tumbuhan, biru = langit/air)
-    - Deteksi variasi warna (batu cenderung abu-abu seragam)
-    - Analisis tekstur (batu memiliki tekstur khas)
-    
-    **Jika gambar terdeteksi sebagai NON-batu:**
-    - Aplikasi akan menampilkan peringatan
-    - Prediksi TIDAK akan akurat
-    - Disarankan untuk tidak melanjutkan
-    
-    **Filter ini membantu:**
-    - Mencegah prediksi salah pada gambar hewan/tumbuhan
-    - Memberi edukasi kepada pengguna
-    - Meningkatkan kepercayaan hasil
-    """)
-    
-    # Demo deteksi
-    st.markdown("### 📝 Demo Deteksi")
-    st.write("Upload gambar untuk melihat cara kerja filter:")
-    
-    test_img = st.file_uploader("Upload gambar test", type=['jpg', 'jpeg', 'png'], key="test_filter")
-    if test_img:
-        test_image = Image.open(test_img)
-        st.image(test_image, caption="Gambar Test", width=300)
-        
-        is_non, msg = detect_non_megalith(test_image)
-        if is_non:
-            st.error(f"❌ **HASIL:** {msg}")
-        else:
-            st.success(f"✅ **HASIL:** {msg}")
+                with col1:
+                    # Confidence display
+                    if confidence >= 0.8:
+                        conf_class = "confidence-high"
+                    elif confidence >= 0.65:
+                        conf_class = "confidence-medium"
+                    else:
+                        conf_class = "confidence-low"
+                    
+                    st.markdown(f"""
+                    <div style="text-align: center; margin: 1rem 0;">
+                        <span class="{conf_class}">Confidence: {confidence:.1%}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Top predictions
+                    st.markdown("### 🏆 Top 3 Prediksi")
+                    
+                    for i, (kelas, prob) in enumerate(top_3, 1):
+                        bar_width = prob * 100
+                        st.markdown(f"""
+                        <div style="margin: 15px 0;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <b>{i}. {kelas}</b>
+                                <span>{prob:.2%}</span>
+                            </div>
+                            <div style="background: #e0e0e0; border-radius: 10px; height: 30px; overflow: hidden;">
+                                <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
+                                            width: {bar_width}%; height: 100%; display: flex; align-items: center; 
+                                            justify-content: flex-end; padding-right: 10px; color: white; font-weight: bold;">
+                                    {prob:.1%}
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                with col2:
+                    # Result card
+                    info = get_description(pred_class)
+                    st.markdown(f"""
+                    <div class="result-card">
+                        <h2 style="color: #2a5298; text-align: center; margin-bottom: 1rem;">{pred_class}</h2>
+                        <hr>
+                        <h4>📖 Deskripsi:</h4>
+                        <p style="text-align: justify;">{info.get('deskripsi', 'Deskripsi tidak tersedia')}</p>
+                        
+                        <h4>🔍 Ciri-ciri:</h4>
+                        <ul>
+                            {''.join([f'<li>{ciri}</li>' for ciri in info.get('ciri', [])])}
+                        </ul>
+                        
+                        <h4>📍 Lokasi Penemuan:</h4>
+                        <p>{info.get('lokasi', 'Tersebar di berbagai wilayah Indonesia')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Mode demo warning
+                if not use_real_model:
+                    st.info("ℹ️ **Mode Demo**: Hasil ini adalah simulasi. Install TensorFlow untuk hasil akurat.")
+                
+                # Success message
+                st.balloons()
+                st.success("✅ Klasifikasi selesai!")
+                
+            else:
+                progress_bar.empty()
+                st.error("❌ Gagal melakukan klasifikasi. Silakan coba lagi.")
 
 # ==============================================
 # FOOTER
 # ==============================================
-st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
-    <p>Aplikasi Klasifikasi Batu Megalitikum<br>
-    © 2024 - Seminar Hasil Penelitian</p>
+<div class="footer">
+    <p>Powered by TensorFlow Lite | Aplikasi Klasifikasi Batu Megalitikum</p>
+    <p style="font-size: 0.8rem;">© 2024 - Untuk Keperluan Penelitian dan Skripsi</p>
 </div>
 """, unsafe_allow_html=True)
