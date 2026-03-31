@@ -415,10 +415,12 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("**Kriteria Gambar:**")
-    st.markdown("- Format: JPG, JPEG, PNG")
-    st.markdown("- Pencahayaan cukup")
+    st.markdown("""
+    - Format: JPG, JPEG, PNG
+    - Pencahayaan cukup
     - Objek batu terlihat jelas
-    - Hindari background ramai")
+    - Hindari background ramai
+    """)
 
 # ==============================================
 # LOAD MODEL
