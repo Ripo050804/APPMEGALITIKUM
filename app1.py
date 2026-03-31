@@ -10,11 +10,10 @@ import json
 import os
 import time
 import pathlib
-import tempfile
 import requests
-from fpdf import FPDF
 import cv2
 from io import BytesIO
+import base64
 
 # ==============================================
 # KONFIGURASI HALAMAN
@@ -228,6 +227,122 @@ def download_file_from_drive(url, filepath):
         return False
 
 # ==============================================
+# FUNGSI MEMBUAT HTML UNTUK PDF (Alternatif)
+# ==============================================
+def buat_html_hasil(nama_file, kelas, confidence, top3, deskripsi):
+    """Buat HTML untuk laporan yang bisa di-download"""
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Hasil Klasifikasi Batu Megalitikum</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 40px;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }}
+            .container {{
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }}
+            h1 {{
+                color: #2a5298;
+                text-align: center;
+                border-bottom: 3px solid #2a5298;
+                padding-bottom: 10px;
+            }}
+            .header {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+            .info {{
+                background: #e8f4f8;
+                padding: 15px;
+                border-radius: 5px;
+                margin: 20px 0;
+            }}
+            .result {{
+                font-size: 24px;
+                font-weight: bold;
+                color: #28a745;
+                text-align: center;
+                margin: 20px 0;
+            }}
+            .confidence {{
+                font-size: 18px;
+                text-align: center;
+                color: #666;
+            }}
+            .top3 {{
+                background: #f9f9f9;
+                padding: 15px;
+                border-radius: 5px;
+                margin: 20px 0;
+            }}
+            .description {{
+                margin: 20px 0;
+                line-height: 1.6;
+                text-align: justify;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #ddd;
+                color: #666;
+                font-size: 12px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Laporan Klasifikasi Batu Megalitikum</h1>
+                <p>Dihasilkan pada: {time.strftime('%d/%m/%Y %H:%M:%S')}</p>
+            </div>
+            
+            <div class="info">
+                <strong>Nama File:</strong> {nama_file}<br>
+                <strong>Tanggal Analisis:</strong> {time.strftime('%d/%m/%Y')}
+            </div>
+            
+            <div class="result">
+                {kelas}
+            </div>
+            
+            <div class="confidence">
+                Tingkat Keyakinan: {confidence:.1%}
+            </div>
+            
+            <div class="top3">
+                <h3>Top 3 Prediksi:</h3>
+                <ol>
+                    {''.join([f'<li><strong>{k}</strong>: {c:.1%}</li>' for k, c in top3])}
+                </ol>
+            </div>
+            
+            <div class="description">
+                <h3>Deskripsi:</h3>
+                <p>{deskripsi}</p>
+            </div>
+            
+            <div class="footer">
+                <p>Aplikasi Klasifikasi Batu Megalitikum<br>Berdasarkan Penelitian Deep Learning</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
+
+# ==============================================
 # LOAD MODEL
 # ==============================================
 @st.cache_resource
@@ -350,37 +465,6 @@ def predict_tflite(interpreter, input_details, output_details, image):
     output_data = interpreter.get_tensor(output_details[0]['index'])
     
     return output_data[0]
-
-# ==============================================
-# FUNGSI PDF
-# ==============================================
-def buat_pdf_hasil(nama_file, kelas, confidence, top3, deskripsi):
-    """Buat PDF hasil klasifikasi"""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=16, style='B')
-    pdf.cell(200, 10, txt="HASIL KLASIFIKASI BATU MEGALITIKUM", ln=1, align='C')
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt=f"File: {nama_file}", ln=1)
-    pdf.cell(200, 10, txt=f"Hasil: {kelas}", ln=1)
-    pdf.cell(200, 10, txt=f"Confidence: {confidence:.2%}", ln=1)
-    pdf.ln(5)
-    
-    pdf.set_font("Arial", style='B', size=12)
-    pdf.cell(200, 10, txt="Top 3 Prediksi:", ln=1)
-    pdf.set_font("Arial", size=12)
-    for i, (k, c) in enumerate(top3, 1):
-        pdf.cell(200, 10, txt=f"{i}. {k}: {c:.2%}", ln=1)
-    
-    pdf.ln(5)
-    pdf.set_font("Arial", style='B', size=12)
-    pdf.cell(200, 10, txt="Deskripsi:", ln=1)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, txt=deskripsi)
-    
-    return pdf.output(dest='S').encode('latin1')
 
 # ==============================================
 # UI HEADER
@@ -554,8 +638,8 @@ if gambar:
                 }
                 st.bar_chart(chart_data, x="Kelas", y="Probabilitas", height=250)
                 
-                # Download PDF
-                pdf_bytes = buat_pdf_hasil(
+                # Download laporan dalam format HTML (alternatif PDF)
+                html_content = buat_html_hasil(
                     gambar.name if hasattr(gambar, 'name') else f"foto_{int(time.time())}.jpg",
                     pred_class,
                     confidence,
@@ -564,13 +648,15 @@ if gambar:
                 )
                 
                 st.download_button(
-                    label="Download Laporan PDF",
-                    data=pdf_bytes,
-                    file_name=f"klasifikasi_{pred_class}_{int(time.time())}.pdf",
-                    mime="application/pdf",
+                    label="Download Laporan (HTML)",
+                    data=html_content,
+                    file_name=f"klasifikasi_{pred_class}_{int(time.time())}.html",
+                    mime="text/html",
                     use_container_width=True,
                     type="primary"
                 )
+                
+                st.info("💡 Tips: Buka file HTML dengan browser untuk melihat laporan lengkap, lalu bisa print sebagai PDF jika diperlukan.")
                 
             else:
                 # Confidence rendah
