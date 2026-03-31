@@ -1,5 +1,168 @@
-# Object file
-*.o
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Ada Library Information
-*.ali
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Streamlit
+.streamlit/secrets.toml
+.cache/
+
+# TensorFlow & Machine Learning
+*.h5
+*.hdf5
+*.pb
+*.meta
+*.index
+*.data-*
+*.ckpt
+checkpoint
+logs/
+events.out.tfevents.*
+
+# Model files (jika besar, lebih baik download dari Drive)
+*.tflite
+*.pbtxt
+saved_model/
+
+# Large data files
+*.csv
+*.xlsx
+*.parquet
+data/
+datasets/
+
+# Temporary files
+*.tmp
+*.temp
+~$*.doc*
+~$*.xls*
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# API Keys & Secrets
+*.pem
+*.key
+secrets/
+config_private.py
+
+# Documentation
+*.pdf
+*.doc
+*.docx
+docs/_build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# MyPy
+.mypy_cache/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# mkdocs
+site/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
