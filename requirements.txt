@@ -1,7 +1,10 @@
 streamlit
 tensorflow
 numpy
+pandas
 Pillow
+scikit-learn
+opencv-python-headless
 gdown
 fpdf
 requests
