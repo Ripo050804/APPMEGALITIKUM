@@ -144,11 +144,11 @@ st.markdown("""
 # KONSTANTA GLOBAL
 # ==============================================
 
-# Google Drive File IDs (ganti dengan ID file Anda)
+# Google Drive File IDs
 MODEL_FILE_ID = "1hRmWsJ8EmqINdMG1GCTuTjLdOfWr3JOx"
 CLASS_NAMES_FILE_ID = "1xHJ7tIuuUt-FEcGGTdxS2N5NvH03h6AK"
 
-# Gunakan temporary directory untuk cache (kompatibel dengan semua OS)
+# Gunakan temporary directory untuk cache
 CACHE_DIR = tempfile.gettempdir()
 MODEL_PATH = os.path.join(CACHE_DIR, "megalitikum_model.tflite")
 CLASS_NAMES_PATH = os.path.join(CACHE_DIR, "class_names.json")
@@ -159,41 +159,41 @@ CONFIDENCE_THRESHOLD = 0.65
 # Target size untuk model
 TARGET_SIZE = (224, 224)
 
-# Deskripsi kelas (fallback jika file class_names.json tidak tersedia)
-DESKRIPSI_KELAS_FALLBACK = {
+# Deskripsi kelas lengkap
+DESKRIPSI_KELAS = {
     "Arca": {
-        "deskripsi": "Arca adalah patung yang melambangkan nenek moyang atau dewa. Biasanya berbentuk manusia atau hewan.",
-        "ciri": ["Berbentuk manusia/hewan", "Detail ukiran", "Posisi berdiri/duduk"],
-        "lokasi": "Sumatera, Jawa, Sulawesi"
+        "deskripsi": "Arca adalah patung yang melambangkan nenek moyang atau dewa. Biasanya berbentuk manusia atau hewan, dan ditemukan di situs megalitik sebagai objek pemujaan.",
+        "ciri": ["Berbentuk manusia atau hewan", "Memiliki detail ukiran yang rumit", "Posisi berdiri atau duduk"],
+        "lokasi": "Sumatera, Jawa, Sulawesi, Kalimantan"
     },
     "dolmen": {
-        "deskripsi": "Dolmen adalah meja batu yang terdiri dari beberapa batu tegak yang menopang batu datar.",
-        "ciri": ["Meja batu", "Tiga atau empat kaki", "Permukaan datar"],
-        "lokasi": "Jawa Timur, Sumatera Selatan"
+        "deskripsi": "Dolmen adalah meja batu yang terdiri dari beberapa batu tegak yang menopang batu datar di atasnya.",
+        "ciri": ["Berbentuk meja batu besar", "Memiliki tiga atau empat kaki penyangga", "Permukaan atas yang datar"],
+        "lokasi": "Jawa Timur, Sumatera Selatan, Nusa Tenggara"
     },
     "menhir": {
-        "deskripsi": "Menhir adalah tugu batu tegak sebagai tanda peringatan atau simbol kekuatan.",
-        "ciri": ["Bentuk memanjang", "Tegak lurus", "Permukaan kasar"],
-        "lokasi": "Nias, Pasemah, Kalimantan"
+        "deskripsi": "Menhir adalah tugu batu tegak yang didirikan sebagai tanda peringatan atau simbol kekuatan.",
+        "ciri": ["Bentuk memanjang seperti tugu", "Posisi tegak lurus ke tanah", "Permukaan kasar tidak rata"],
+        "lokasi": "Nias, Pasemah, Kalimantan, Sulawesi"
     },
     "dakon": {
-        "deskripsi": "Dakon adalah batu berlubang-lubang seperti papan permainan congkak.",
-        "ciri": ["Lubang-lubang teratur", "Bentuk persegi/oval", "Ukiran sederhana"],
-        "lokasi": "Jawa Barat, Jawa Tengah"
+        "deskripsi": "Dakon adalah batu berlubang-lubang yang menyerupai papan permainan congkak.",
+        "ciri": ["Memiliki lubang-lubang teratur", "Bentuk persegi atau oval", "Ukiran sederhana di permukaan"],
+        "lokasi": "Jawa Barat, Jawa Tengah, Yogyakarta"
     },
     "batu_datar": {
-        "deskripsi": "Batu datar adalah batu besar berbentuk lempengan untuk alas atau tempat duduk.",
-        "ciri": ["Permukaan rata", "Bentuk lempeng", "Ukuran besar"],
-        "lokasi": "Sumatra, Jawa, Bali"
+        "deskripsi": "Batu datar adalah batu besar berbentuk lempengan yang digunakan sebagai alas atau tempat duduk.",
+        "ciri": ["Permukaan rata dan halus", "Bentuk lempeng tipis", "Ukuran besar (2-3 meter)"],
+        "lokasi": "Sumatra, Jawa, Bali, Nusa Tenggara"
     },
     "Kubur_batu": {
-        "deskripsi": "Kubur batu adalah peti mati dari batu untuk mengubur mayat.",
-        "ciri": ["Bentuk peti", "Tutup batu", "Ukiran sederhana"],
-        "lokasi": "Jawa Timur, Nusa Tenggara"
+        "deskripsi": "Kubur batu adalah peti mati yang terbuat dari batu, digunakan untuk mengubur mayat.",
+        "ciri": ["Bentuk seperti peti mati", "Memiliki tutup batu", "Ukiran sederhana di dinding"],
+        "lokasi": "Jawa Timur, Nusa Tenggara, Sulawesi"
     },
     "Lesung_batu": {
-        "deskripsi": "Lesung batu adalah batu berlubang untuk menumbuk bahan makanan.",
-        "ciri": ["Lubang cekung", "Dinding tebal", "Permukaan kasar"],
+        "deskripsi": "Lesung batu adalah batu berlubang yang digunakan sebagai wadah untuk menumbuk bahan makanan.",
+        "ciri": ["Lubang cekung di tengah", "Dinding tebal dan kokoh", "Permukaan kasar"],
         "lokasi": "Seluruh Indonesia"
     }
 }
@@ -204,6 +204,8 @@ DESKRIPSI_KELAS_FALLBACK = {
 @st.cache_resource
 def download_model():
     """Download model dan class names dari Google Drive menggunakan gdown"""
+    success = True
+    
     try:
         # Download model
         if not os.path.exists(MODEL_PATH):
@@ -218,11 +220,13 @@ def download_model():
                 url = f"https://drive.google.com/uc?id={CLASS_NAMES_FILE_ID}"
                 gdown.download(url, CLASS_NAMES_PATH, quiet=False)
                 st.success("✅ Data kelas berhasil diunduh!")
-        
-        return True
+                
     except Exception as e:
-        st.error(f"❌ Gagal mengunduh file: {str(e)}")
-        return False
+        st.warning(f"⚠️ Gagal mengunduh file: {str(e)}")
+        st.info("💡 Aplikasi akan berjalan dalam mode DEMO.")
+        success = False
+    
+    return success
 
 # ==============================================
 # LOAD MODEL TENSORFLOW LITE
@@ -233,24 +237,24 @@ def load_tflite_model():
     try:
         import tensorflow as tf
         
-        # Download model terlebih dahulu
-        if not download_model():
+        download_success = download_model()
+        
+        if download_success and os.path.exists(MODEL_PATH):
+            interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+            interpreter.allocate_tensors()
+            
+            input_details = interpreter.get_input_details()
+            output_details = interpreter.get_output_details()
+            
+            return interpreter, input_details, output_details
+        else:
             return None, None, None
         
-        # Load model
-        interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-        interpreter.allocate_tensors()
-        
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
-        
-        return interpreter, input_details, output_details
-        
     except ImportError:
-        st.warning("⚠️ TensorFlow tidak terinstal. Aplikasi berjalan dalam mode demo.")
+        st.info("ℹ️ Mode Demo: TensorFlow tidak terinstal.")
         return None, None, None
     except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
+        st.warning(f"⚠️ Error loading model: {str(e)}")
         return None, None, None
 
 # ==============================================
@@ -258,61 +262,50 @@ def load_tflite_model():
 # ==============================================
 @st.cache_data
 def load_class_names():
-    """Load class names dari file JSON"""
+    """Load class names dari file JSON atau gunakan default"""
     try:
         if os.path.exists(CLASS_NAMES_PATH):
             with open(CLASS_NAMES_PATH, 'r', encoding='utf-8') as f:
                 class_names = json.load(f)
-                return class_names
+                if isinstance(class_names, list) and len(class_names) > 0:
+                    return class_names
+                else:
+                    return list(DESKRIPSI_KELAS.keys())
         else:
-            return list(DESKRIPSI_KELAS_FALLBACK.keys())
+            return list(DESKRIPSI_KELAS.keys())
     except Exception as e:
-        st.warning(f"Gagal load class names: {str(e)}")
-        return list(DESKRIPSI_KELAS_FALLBACK.keys())
+        return list(DESKRIPSI_KELAS.keys())
 
 # ==============================================
-# FUNGSI PREPROCESSING GAMBAR (Tanpa OpenCV)
+# FUNGSI PREPROCESSING GAMBAR
 # ==============================================
 def preprocess_image(image):
-    """
-    Preprocessing gambar untuk model
-    Menggunakan PIL saja untuk menghindari dependensi OpenCV yang berat
-    """
+    """Preprocessing gambar untuk model"""
     try:
-        # Convert to RGB
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Resize dengan kualitas tinggi
         image = image.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
-        
-        # Konversi ke numpy array dan normalisasi
         img_array = np.array(image, dtype=np.float32) / 255.0
-        
-        # Enhance contrast sederhana
-        img_array = np.power(img_array, 0.8)  # Gamma correction sederhana
+        img_array = np.power(img_array, 0.9)
         
         return img_array
     except Exception as e:
-        st.error(f"Error preprocessing: {str(e)}")
         return None
 
 # ==============================================
-# FUNGSI ANALISIS KUALITAS GAMBAR (Tanpa OpenCV)
+# FUNGSI ANALISIS KUALITAS GAMBAR
 # ==============================================
 def analyze_image_quality(image):
     """Analisis kualitas gambar menggunakan PIL dan NumPy"""
     try:
-        # Convert to grayscale
         gray = image.convert('L')
         gray_array = np.array(gray, dtype=np.float32)
         
-        # Hitung metrik
         brightness = np.mean(gray_array)
         contrast = np.std(gray_array)
         texture = np.var(gray_array)
         
-        # Estimasi ketajaman (gradient sederhana)
         if gray_array.shape[0] > 2 and gray_array.shape[1] > 2:
             grad_x = np.abs(np.diff(gray_array, axis=1))
             grad_y = np.abs(np.diff(gray_array, axis=0))
@@ -320,18 +313,25 @@ def analyze_image_quality(image):
         else:
             sharpness = 100
         
+        brightness_norm = min(100, max(0, (brightness / 255) * 100))
+        contrast_norm = min(100, (contrast / 128) * 100)
+        texture_norm = min(100, (texture / 1000) * 100)
+        sharpness_norm = min(100, (sharpness / 500) * 100)
+        
         return {
-            'brightness': brightness,
-            'contrast': contrast,
-            'texture': texture,
-            'sharpness': sharpness
+            'brightness': brightness_norm,
+            'contrast': contrast_norm,
+            'texture': texture_norm,
+            'sharpness': sharpness_norm,
+            'brightness_raw': brightness,
+            'contrast_raw': contrast,
+            'texture_raw': texture,
+            'sharpness_raw': sharpness
         }
-    except Exception as e:
+    except Exception:
         return {
-            'brightness': 128,
-            'contrast': 64,
-            'texture': 500,
-            'sharpness': 200
+            'brightness': 50, 'contrast': 50, 'texture': 50, 'sharpness': 50,
+            'brightness_raw': 128, 'contrast_raw': 64, 'texture_raw': 500, 'sharpness_raw': 200
         }
 
 # ==============================================
@@ -340,22 +340,17 @@ def analyze_image_quality(image):
 def predict_image(interpreter, input_details, output_details, image):
     """Prediksi gambar menggunakan model TFLite"""
     try:
-        # Preprocess
         img_array = preprocess_image(image)
         if img_array is None:
             return None
         
-        # Prepare input
         input_data = np.expand_dims(img_array, axis=0)
-        
-        # Predict
         interpreter.set_tensor(input_details[0]['index'], input_data)
         interpreter.invoke()
         predictions = interpreter.get_tensor(output_details[0]['index'])[0]
         
         return predictions
     except Exception as e:
-        st.error(f"Error prediksi: {str(e)}")
         return None
 
 # ==============================================
@@ -364,17 +359,33 @@ def predict_image(interpreter, input_details, output_details, image):
 def simulate_prediction(image, class_names):
     """Simulasi prediksi untuk mode demo"""
     try:
-        # Analisis sederhana untuk simulasi
         quality = analyze_image_quality(image)
+        n_classes = len(class_names)
+        predictions = np.zeros(n_classes)
         
-        # Buat prediksi dummy berdasarkan tekstur
-        np.random.seed(int(quality['texture']) % 10000)
-        predictions = np.random.rand(len(class_names))
+        if quality['texture_raw'] > 500:
+            if 'menhir' in class_names:
+                predictions[class_names.index('menhir')] = 0.6
+            if 'Arca' in class_names:
+                predictions[class_names.index('Arca')] = 0.4
+        else:
+            if 'dolmen' in class_names:
+                predictions[class_names.index('dolmen')] = 0.5
+            if 'batu_datar' in class_names:
+                predictions[class_names.index('batu_datar')] = 0.5
+        
+        if np.sum(predictions) > 0:
+            predictions = predictions / np.sum(predictions)
+        else:
+            predictions = np.ones(n_classes) / n_classes
+        
+        noise = np.random.normal(0, 0.05, n_classes)
+        predictions = predictions + noise
+        predictions = np.maximum(predictions, 0)
         predictions = predictions / np.sum(predictions)
         
         return predictions
     except Exception:
-        # Fallback: distribusi uniform
         predictions = np.ones(len(class_names)) / len(class_names)
         return predictions
 
@@ -383,8 +394,8 @@ def simulate_prediction(image, class_names):
 # ==============================================
 def get_description(class_name):
     """Mendapatkan deskripsi kelas"""
-    if class_name in DESKRIPSI_KELAS_FALLBACK:
-        return DESKRIPSI_KELAS_FALLBACK[class_name]
+    if class_name in DESKRIPSI_KELAS:
+        return DESKRIPSI_KELAS[class_name]
     return {
         "deskripsi": f"Deskripsi untuk {class_name} tidak tersedia.",
         "ciri": ["Belum terdefinisi"],
@@ -427,10 +438,6 @@ with st.sidebar:
     3. ✅ Background polos
     4. ✅ Hindari gambar blur
     """)
-    
-    st.markdown("---")
-    st.markdown("## 📞 Kontak")
-    st.markdown("Untuk keperluan akademik dan penelitian.")
 
 # ==============================================
 # LOAD MODEL
@@ -438,8 +445,6 @@ with st.sidebar:
 with st.spinner("🔄 Memuat model AI..."):
     interpreter, input_details, output_details = load_tflite_model()
     class_names = load_class_names()
-    
-    # Cek apakah model berhasil dimuat
     use_real_model = interpreter is not None
     
     if not use_real_model:
@@ -453,11 +458,10 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.markdown("## 📸 Upload Gambar")
     
-    # Pilihan upload
     upload_type = st.radio(
-    "Pilih sumber gambar:",
-    ["📁 Upload File", "📷 Kamera"],
-    horizontal=True
+        "Pilih sumber gambar:",
+        ["📁 Upload File", "📷 Kamera"],
+        horizontal=True
     )
     
     image_file = None
@@ -486,7 +490,7 @@ with col2:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================
-= PROSES KLASIFIKASI
+# PROSES KLASIFIKASI
 # ==============================================
 if image_file and image is not None:
     st.markdown("---")
@@ -532,12 +536,12 @@ if image_file and image is not None:
         """, unsafe_allow_html=True)
     
     # Peringatan kualitas
-    if quality_metrics['brightness'] < 50:
+    if quality_metrics['brightness_raw'] < 50:
         st.warning("⚠️ Gambar terlalu gelap. Hasil klasifikasi mungkin kurang akurat.")
-    elif quality_metrics['brightness'] > 200:
+    elif quality_metrics['brightness_raw'] > 200:
         st.warning("⚠️ Gambar terlalu terang. Hasil klasifikasi mungkin kurang akurat.")
     
-    if quality_metrics['sharpness'] < 100:
+    if quality_metrics['sharpness_raw'] < 100:
         st.warning("⚠️ Gambar kurang tajam. Hasil klasifikasi mungkin kurang akurat.")
     
     # Tombol klasifikasi
