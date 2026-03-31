@@ -5,13 +5,12 @@ Sistem Klasifikasi Citra Batu Megalitikum Berbasis Deep Learning
 
 import streamlit as st
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageStat
 import json
 import os
 import time
 import pathlib
 import requests
-import cv2
 from io import BytesIO
 import base64
 
@@ -227,7 +226,109 @@ def download_file_from_drive(url, filepath):
         return False
 
 # ==============================================
-# FUNGSI MEMBUAT HTML UNTUK PDF (Alternatif)
+# FUNGSI ANALISIS GAMBAR (TANPA OPENCV)
+# ==============================================
+def analyze_image_brightness(image):
+    """Analisis kecerahan gambar menggunakan PIL"""
+    # Convert to grayscale
+    gray = image.convert('L')
+    # Get histogram
+    histogram = gray.histogram()
+    # Calculate weighted average
+    pixels = sum(histogram)
+    brightness = sum(i * w for i, w in enumerate(histogram)) / pixels
+    return brightness
+
+def analyze_image_sharpness(image):
+    """Analisis ketajaman gambar menggunakan variance of Laplacian (simulasi)"""
+    # Convert to numpy array
+    img_array = np.array(image.convert('L'))
+    
+    # Simple edge detection using gradient
+    if img_array.shape[0] < 3 or img_array.shape[1] < 3:
+        return 1000  # Return high value for very small images
+    
+    # Calculate gradient magnitude
+    grad_x = np.diff(img_array, axis=1)
+    grad_y = np.diff(img_array, axis=0)
+    
+    # Adjust dimensions
+    min_shape = min(grad_x.shape[0], grad_y.shape[0]), min(grad_x.shape[1], grad_y.shape[1])
+    grad_x = grad_x[:min_shape[0], :min_shape[1]]
+    grad_y = grad_y[:min_shape[0], :min_shape[1]]
+    
+    # Calculate magnitude
+    magnitude = np.sqrt(grad_x**2 + grad_y**2)
+    sharpness = np.var(magnitude)
+    
+    return sharpness
+
+def analyze_image_texture(image):
+    """Analisis tekstur gambar menggunakan variance"""
+    img_array = np.array(image.convert('L'))
+    texture_variance = np.var(img_array)
+    return texture_variance
+
+def analyze_color_dominance(image):
+    """Analisis dominasi warna pada gambar"""
+    # Convert to RGB numpy array
+    img_array = np.array(image.convert('RGB'))
+    
+    if img_array.size == 0:
+        return 0, 0, 0
+    
+    # Calculate mean of each channel
+    r_mean = np.mean(img_array[:,:,0])
+    g_mean = np.mean(img_array[:,:,1])
+    b_mean = np.mean(img_array[:,:,2])
+    
+    return r_mean, g_mean, b_mean
+
+# ==============================================
+# FUNGSI FILTER GAMBAR
+# ==============================================
+def is_megalith_image(image):
+    """Filter untuk memastikan gambar adalah batu megalitikum"""
+    try:
+        # Analisis warna
+        r_mean, g_mean, b_mean = analyze_color_dominance(image)
+        
+        # Deteksi warna hijau (tumbuhan)
+        if g_mean > r_mean * 1.3 and g_mean > b_mean * 1.3:
+            return False, "Gambar didominasi warna hijau (mungkin tumbuhan)", 0.1
+        
+        # Deteksi warna biru (langit/air)
+        if b_mean > r_mean * 1.4 and b_mean > g_mean * 1.4:
+            return False, "Gambar didominasi warna biru (mungkin langit/air)", 0.1
+        
+        # Analisis tekstur
+        texture_variance = analyze_image_texture(image)
+        
+        if texture_variance < MIN_TEXTURE_VARIANCE:
+            return False, "Tekstur terlalu halus untuk dikategorikan batu", 0.3
+        
+        # Analisis ketajaman
+        laplacian_var = analyze_image_sharpness(image)
+        
+        if laplacian_var < 100:
+            return False, "Gambar terlalu blur, detail tidak jelas", 0.2
+        
+        # Analisis brightness
+        brightness = analyze_image_brightness(image)
+        
+        if brightness < 40:
+            return False, "Gambar terlalu gelap", 0.2
+        if brightness > 220:
+            return False, "Gambar terlalu terang (overexposed)", 0.2
+        
+        score = 0.7
+        return True, "Gambar memenuhi kriteria analisis", score
+        
+    except Exception as e:
+        return False, f"Error saat analisis: {str(e)}", 0
+
+# ==============================================
+# FUNGSI MEMBUAT HTML UNTUK LAPORAN
 # ==============================================
 def buat_html_hasil(nama_file, kelas, confidence, top3, deskripsi):
     """Buat HTML untuk laporan yang bisa di-download"""
@@ -404,54 +505,6 @@ def load_class_names():
         return list(DESKRIPSI_KELAS.keys())
 
 # ==============================================
-# FUNGSI FILTER GAMBAR
-# ==============================================
-def is_megalith_image(image):
-    """Filter untuk memastikan gambar adalah batu megalitikum"""
-    try:
-        img_array = np.array(image.convert('RGB'))
-        
-        # Analisis warna
-        r_mean = np.mean(img_array[:,:,0])
-        g_mean = np.mean(img_array[:,:,1])
-        b_mean = np.mean(img_array[:,:,2])
-        
-        # Deteksi warna hijau (tumbuhan)
-        if g_mean > r_mean * 1.3 and g_mean > b_mean * 1.3:
-            return False, "Gambar didominasi warna hijau (mungkin tumbuhan)", 0.1
-        
-        # Deteksi warna biru (langit/air)
-        if b_mean > r_mean * 1.4 and b_mean > g_mean * 1.4:
-            return False, "Gambar didominasi warna biru (mungkin langit/air)", 0.1
-        
-        # Analisis tekstur
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        texture_variance = np.var(gray)
-        
-        if texture_variance < MIN_TEXTURE_VARIANCE:
-            return False, "Tekstur terlalu halus untuk dikategorikan batu", 0.3
-        
-        # Analisis ketajaman
-        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        
-        if laplacian_var < 100:
-            return False, "Gambar terlalu blur, detail tidak jelas", 0.2
-        
-        # Analisis brightness
-        brightness = np.mean(gray)
-        
-        if brightness < 40:
-            return False, "Gambar terlalu gelap", 0.2
-        if brightness > 220:
-            return False, "Gambar terlalu terang (overexposed)", 0.2
-        
-        score = 0.7
-        return True, "Gambar memenuhi kriteria analisis", score
-        
-    except Exception as e:
-        return False, f"Error saat analisis: {str(e)}", 0
-
-# ==============================================
 # FUNGSI PREDIKSI
 # ==============================================
 def predict_tflite(interpreter, input_details, output_details, image):
@@ -615,20 +668,19 @@ if gambar:
                 # Top 3 predictions dengan progress bar
                 st.markdown("### Prediksi Lainnya")
                 for i, (cls, conf) in enumerate(top_3, 1):
-                    if i > 1:
-                        bar_width = min(int(conf * 100), 100)
-                        st.markdown(f"""
-                        <div style="margin: 0.75rem 0;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.9rem;">
-                                <span>{i}. {cls}</span>
-                                <span style="color: #666;">{conf:.1%}</span>
-                            </div>
-                            <div style="background: #e0e0e0; border-radius: 4px; height: 8px; overflow: hidden;">
-                                <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
-                                            width: {bar_width}%; height: 100%; border-radius: 4px; transition: width 0.3s ease;"></div>
-                            </div>
+                    bar_width = min(int(conf * 100), 100)
+                    st.markdown(f"""
+                    <div style="margin: 0.75rem 0;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.9rem;">
+                            <span>{i}. {cls}</span>
+                            <span style="color: #666;">{conf:.1%}</span>
                         </div>
-                        """, unsafe_allow_html=True)
+                        <div style="background: #e0e0e0; border-radius: 4px; height: 8px; overflow: hidden;">
+                            <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
+                                        width: {bar_width}%; height: 100%; border-radius: 4px; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 # Grafik distribusi probabilitas
                 st.markdown("### Distribusi Probabilitas")
@@ -638,7 +690,7 @@ if gambar:
                 }
                 st.bar_chart(chart_data, x="Kelas", y="Probabilitas", height=250)
                 
-                # Download laporan dalam format HTML (alternatif PDF)
+                # Download laporan dalam format HTML
                 html_content = buat_html_hasil(
                     gambar.name if hasattr(gambar, 'name') else f"foto_{int(time.time())}.jpg",
                     pred_class,
@@ -656,7 +708,7 @@ if gambar:
                     type="primary"
                 )
                 
-                st.info("💡 Tips: Buka file HTML dengan browser untuk melihat laporan lengkap, lalu bisa print sebagai PDF jika diperlukan.")
+                st.info("💡 **Tips:** Buka file HTML dengan browser untuk melihat laporan lengkap. Dari browser, Anda bisa mencetak (Ctrl+P) dan menyimpan sebagai PDF jika diperlukan.")
                 
             else:
                 # Confidence rendah
